@@ -123,6 +123,7 @@ class QobuzSyncService:
         seen_upcs: Set[str] = set()
 
         for source_client in self.source_clients:
+            logger.info(f"\nFetching favorite albums from {source_client.account_name}...")
             source_albums = source_client.get_favorite_albums()
             stats['total_source_albums'] += len(source_albums)
             for album in source_albums:
@@ -136,24 +137,58 @@ class QobuzSyncService:
                 if upc:
                     seen_upcs.add(upc)
 
+        logger.info(f"Fetching existing albums from target account ({self.target_client.account_name})...")
         target_albums = self.target_client.get_favorite_albums()
         target_album_ids = {album['id'] for album in target_albums}
         target_upcs = {album['upc'].upper() for album in target_albums if album.get('upc')}
+        logger.info(f"Target account has {len(target_albums)} existing favorite albums")
 
         stats['unique_albums'] = len(unique_albums)
-        for album_id, album in unique_albums.items():
+        logger.info(f"\nFound {stats['unique_albums']} unique albums across {stats['source_accounts']} source accounts")
+        logger.info(f"Total source albums: {stats['total_source_albums']}")
+
+        logger.info(f"\nSyncing to target account ({self.target_client.account_name})...")
+        for i, (album_id, album) in enumerate(unique_albums.items(), 1):
             upc = album.get('upc', '').upper()
-            if album_id in target_album_ids or (upc and upc in target_upcs):
+            album_title = album.get('title', f"Album ID {album_id}")
+            artist_name = album.get('artist', 'Unknown artist')
+
+            already_exists = album_id in target_album_ids
+            if not already_exists and upc:
+                already_exists = upc in target_upcs
+
+            if already_exists:
+                logger.info(f"[{i}/{stats['unique_albums']}] ⏭️ Already favorited: {album_title} by {artist_name}")
                 stats['already_favorited'] += 1
                 continue
 
             if dry_run:
+                logger.info(f"[{i}/{stats['unique_albums']}] [DRY RUN] Would favorite album: {album_title} by {artist_name}")
                 stats['newly_favorited'] += 1
             else:
                 if self.target_client.add_favorite_album(album_id):
+                    logger.info(f"[{i}/{stats['unique_albums']}] ✅ Favorited album: {album_title} by {artist_name}")
                     stats['newly_favorited'] += 1
+                    target_album_ids.add(album_id)
+                    if upc:
+                        target_upcs.add(upc)
                 else:
+                    logger.warning(f"[{i}/{stats['unique_albums']}] ❌ Failed to favorite album: {album_title} by {artist_name}")
                     stats['failed'] += 1
+
+        logger.info("\n" + "=" * 60)
+        logger.info("ALBUMS SYNC SUMMARY")
+        logger.info("=" * 60)
+        logger.info(f"Source accounts: {stats['source_accounts']}")
+        logger.info(f"Total source albums: {stats['total_source_albums']}")
+        logger.info(f"Unique albums (after dedup): {stats['unique_albums']}")
+        logger.info(f"Already in target account: {stats['already_favorited']}")
+        logger.info(f"Newly favorited: {stats['newly_favorited']}")
+        logger.info(f"Failed: {stats['failed']}")
+        if stats['unique_albums'] > 0:
+            coverage = ((stats['already_favorited'] + stats['newly_favorited']) / stats['unique_albums']) * 100
+            logger.info(f"Coverage: {coverage:.1f}%")
+        logger.info("=" * 60)
 
         return stats
 
@@ -174,26 +209,55 @@ class QobuzSyncService:
 
         unique_artists: Dict[int, Dict] = {}
         for source_client in self.source_clients:
+            logger.info(f"\nFetching favorite artists from {source_client.account_name}...")
             source_artists = source_client.get_favorite_artists()
             stats['total_source_artists'] += len(source_artists)
             for artist in source_artists:
                 unique_artists.setdefault(artist['id'], artist)
 
+        logger.info(f"Fetching existing artists from target account ({self.target_client.account_name})...")
         target_artists = self.target_client.get_favorite_artists()
         target_artist_ids = {artist['id'] for artist in target_artists}
+        logger.info(f"Target account has {len(target_artists)} existing favorite artists")
 
         stats['unique_artists'] = len(unique_artists)
-        for artist_id in unique_artists:
+        logger.info(f"\nFound {stats['unique_artists']} unique artists across {stats['source_accounts']} source accounts")
+        logger.info(f"Total source artists: {stats['total_source_artists']}")
+
+        logger.info(f"\nSyncing to target account ({self.target_client.account_name})...")
+        for i, (artist_id, artist) in enumerate(unique_artists.items(), 1):
+            artist_name = artist.get('name', f"Artist ID {artist_id}")
+
             if artist_id in target_artist_ids:
+                logger.info(f"[{i}/{stats['unique_artists']}] ⏭️ Already favorited: {artist_name}")
                 stats['already_favorited'] += 1
                 continue
+
             if dry_run:
+                logger.info(f"[{i}/{stats['unique_artists']}] [DRY RUN] Would favorite artist: {artist_name}")
                 stats['newly_favorited'] += 1
             else:
                 if self.target_client.add_favorite_artist(artist_id):
+                    logger.info(f"[{i}/{stats['unique_artists']}] ✅ Favorited artist: {artist_name}")
                     stats['newly_favorited'] += 1
+                    target_artist_ids.add(artist_id)
                 else:
+                    logger.warning(f"[{i}/{stats['unique_artists']}] ❌ Failed to favorite artist: {artist_name}")
                     stats['failed'] += 1
+
+        logger.info("\n" + "=" * 60)
+        logger.info("ARTISTS SYNC SUMMARY")
+        logger.info("=" * 60)
+        logger.info(f"Source accounts: {stats['source_accounts']}")
+        logger.info(f"Total source artists: {stats['total_source_artists']}")
+        logger.info(f"Unique artists (after dedup): {stats['unique_artists']}")
+        logger.info(f"Already in target account: {stats['already_favorited']}")
+        logger.info(f"Newly favorited: {stats['newly_favorited']}")
+        logger.info(f"Failed: {stats['failed']}")
+        if stats['unique_artists'] > 0:
+            coverage = ((stats['already_favorited'] + stats['newly_favorited']) / stats['unique_artists']) * 100
+            logger.info(f"Coverage: {coverage:.1f}%")
+        logger.info("=" * 60)
 
         return stats
 

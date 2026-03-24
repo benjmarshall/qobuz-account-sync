@@ -1,5 +1,6 @@
 """Tests for QobuzSyncService."""
 
+import logging
 import pytest
 from unittest.mock import Mock, MagicMock
 
@@ -233,6 +234,56 @@ class TestAlbumsAndArtistsSync:
         assert stats['already_favorited'] == 1
         assert stats['newly_favorited'] == 1
         assert target.add_favorite_artist.call_count == 1
+
+    def test_sync_albums_logging_progress_and_dry_run(self, caplog):
+        source = Mock()
+        source.account_name = "Source"
+        source.get_favorite_albums.return_value = [
+            {'id': 10, 'title': 'Album 1', 'artist': 'Artist 1', 'upc': 'UPC1'},
+            {'id': 11, 'title': 'Album 2', 'artist': 'Artist 2', 'upc': 'UPC2'}
+        ]
+
+        target = Mock()
+        target.account_name = "Target"
+        target.get_favorite_albums.return_value = [
+            {'id': 10, 'title': 'Album 1', 'artist': 'Artist 1', 'upc': 'UPC1'}
+        ]
+
+        service = QobuzSyncService([source], target)
+
+        with caplog.at_level(logging.INFO, logger="qobuz_sync"):
+            service.sync_albums(dry_run=True)
+
+        assert "Starting albums sync" in caplog.text
+        assert "[1/2] ⏭️ Already favorited: Album 1 by Artist 1" in caplog.text
+        assert "[2/2] [DRY RUN] Would favorite album: Album 2 by Artist 2" in caplog.text
+        assert "ALBUMS SYNC SUMMARY" in caplog.text
+
+    def test_sync_artists_logging_progress_and_failures(self, caplog):
+        source = Mock()
+        source.account_name = "Source"
+        source.get_favorite_artists.return_value = [
+            {'id': 1, 'name': 'Artist 1'},
+            {'id': 2, 'name': 'Artist 2'},
+            {'id': 3, 'name': 'Artist 3'}
+        ]
+
+        target = Mock()
+        target.account_name = "Target"
+        target.get_favorite_artists.return_value = [
+            {'id': 1, 'name': 'Artist 1'}
+        ]
+        target.add_favorite_artist.side_effect = [True, False]
+
+        service = QobuzSyncService([source], target)
+
+        with caplog.at_level(logging.INFO, logger="qobuz_sync"):
+            service.sync_artists(dry_run=False)
+
+        assert "[1/3] ⏭️ Already favorited: Artist 1" in caplog.text
+        assert "[2/3] ✅ Favorited artist: Artist 2" in caplog.text
+        assert "[3/3] ❌ Failed to favorite artist: Artist 3" in caplog.text
+        assert "ARTISTS SYNC SUMMARY" in caplog.text
 
 
 class TestPlaylistsSync:
