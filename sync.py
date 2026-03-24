@@ -36,6 +36,26 @@ def main():
         help='Only sync playlists, skip favorites'
     )
     parser.add_argument(
+        '--albums-only',
+        action='store_true',
+        help='Only sync favorite albums'
+    )
+    parser.add_argument(
+        '--artists-only',
+        action='store_true',
+        help='Only sync favorite artists'
+    )
+    parser.add_argument(
+        '--skip-albums',
+        action='store_true',
+        help='Skip syncing favorite albums'
+    )
+    parser.add_argument(
+        '--skip-artists',
+        action='store_true',
+        help='Skip syncing favorite artists'
+    )
+    parser.add_argument(
         '--no-merge',
         action='store_true',
         help='Keep playlists separate instead of merging by name'
@@ -56,6 +76,36 @@ def main():
     )
     
     args = parser.parse_args()
+
+    only_flags = [args.favorites_only, args.playlists_only, args.albums_only, args.artists_only]
+    if sum(1 for flag in only_flags if flag) > 1:
+        parser.error("Only one of --favorites-only, --playlists-only, --albums-only, --artists-only can be used at a time")
+
+    sync_tracks = True
+    sync_playlists = True
+    sync_albums = not args.skip_albums
+    sync_artists = not args.skip_artists
+
+    if args.favorites_only:
+        sync_tracks = True
+        sync_playlists = False
+        sync_albums = False
+        sync_artists = False
+    elif args.playlists_only:
+        sync_tracks = False
+        sync_playlists = True
+        sync_albums = False
+        sync_artists = False
+    elif args.albums_only:
+        sync_tracks = False
+        sync_playlists = False
+        sync_albums = True
+        sync_artists = False
+    elif args.artists_only:
+        sync_tracks = False
+        sync_playlists = False
+        sync_albums = False
+        sync_artists = True
     
     # Set up logging
     if args.log_file:
@@ -76,6 +126,10 @@ def main():
     logger.info(f"Log file: {log_file}")
     logger.info(f"Dry run: {args.dry_run}")
     logger.info(f"Merge playlists: {not args.no_merge}")
+    logger.info(f"Sync tracks: {sync_tracks}")
+    logger.info(f"Sync playlists: {sync_playlists}")
+    logger.info(f"Sync albums: {sync_albums}")
+    logger.info(f"Sync artists: {sync_artists}")
     
     try:
         # Load credentials
@@ -107,15 +161,27 @@ def main():
         source_clients = [source_1_client, source_2_client]
         sync_service = QobuzSyncService(source_clients, target_client)
         
-        # Sync favorites
-        if not args.playlists_only:
+        run_stats = {}
+
+        # Sync tracks favorites
+        if sync_tracks:
             logger.info("\n")
-            favorites_stats = sync_service.sync_favorites(dry_run=args.dry_run)
-        
+            run_stats['tracks'] = sync_service.sync_favorites(dry_run=args.dry_run)
+
+        # Sync favorite albums
+        if sync_albums:
+            logger.info("\n")
+            run_stats['albums'] = sync_service.sync_albums(dry_run=args.dry_run)
+
+        # Sync favorite artists
+        if sync_artists:
+            logger.info("\n")
+            run_stats['artists'] = sync_service.sync_artists(dry_run=args.dry_run)
+
         # Sync playlists
-        if not args.favorites_only:
+        if sync_playlists:
             logger.info("\n")
-            playlists_stats = sync_service.sync_playlists(
+            run_stats['playlists'] = sync_service.sync_playlists(
                 dry_run=args.dry_run,
                 merge_playlists=not args.no_merge
             )
@@ -130,6 +196,15 @@ def main():
             logger.info("Run without --dry-run to actually sync")
         else:
             logger.info("✅ Sync completed successfully!")
+
+        if 'tracks' in run_stats:
+            logger.info(f"Tracks: +{run_stats['tracks']['newly_favorited']} new, {run_stats['tracks']['already_favorited']} already in target")
+        if 'albums' in run_stats:
+            logger.info(f"Albums: +{run_stats['albums']['newly_favorited']} new, {run_stats['albums']['already_favorited']} already in target")
+        if 'artists' in run_stats:
+            logger.info(f"Artists: +{run_stats['artists']['newly_favorited']} new, {run_stats['artists']['already_favorited']} already in target")
+        if 'playlists' in run_stats:
+            logger.info(f"Playlists: {run_stats['playlists']['playlists_created']} created, {run_stats['playlists']['playlists_updated']} updated, {run_stats['playlists']['tracks_added']} tracks added")
         
         logger.info(f"\nLog file: {log_file}")
         

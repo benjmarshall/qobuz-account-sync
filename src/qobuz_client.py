@@ -175,6 +175,103 @@ class QobuzClient:
         except requests.exceptions.RequestException as e:
             logger.error(f"[{self.account_name}] Failed to add track {track_id}: {e}")
             return False
+
+    def get_favorite_albums(self, limit: int = 5000) -> List[Dict]:
+        """Get all favorite albums for the authenticated user."""
+        try:
+            url = f"{self.BASE_URL}/favorite/getUserFavorites"
+            params = {"type": "albums", "limit": limit, "offset": 0}
+
+            response = self._session.get(url, params=params, timeout=30)
+            response.raise_for_status()
+
+            data = response.json()
+            albums = []
+
+            if 'albums' in data and 'items' in data['albums']:
+                for item in data['albums']['items']:
+                    albums.append({
+                        'id': item['id'],
+                        'title': item.get('title', 'Unknown'),
+                        'artist': item.get('artist', {}).get('name', 'Unknown'),
+                        'upc': item.get('upc', ''),
+                        'release_date': item.get('release_date_original', '')
+                    })
+
+            logger.info(f"[{self.account_name}] Retrieved {len(albums)} favorite albums")
+            return albums
+
+        except requests.exceptions.RequestException as e:
+            logger.error(f"[{self.account_name}] Failed to get favorite albums: {e}")
+            raise Exception(f"Failed to get favorite albums: {e}")
+
+    def add_favorite_album(self, album_id: int) -> bool:
+        """Add an album to user's favorites."""
+        try:
+            url = f"{self.BASE_URL}/favorite/create"
+            params = {"album_ids": str(album_id)}
+
+            response = self._session.post(url, data=params, timeout=10)
+
+            if response.status_code == 400:
+                logger.debug(f"[{self.account_name}] Album {album_id} already favorited")
+                return True
+
+            response.raise_for_status()
+            logger.debug(f"[{self.account_name}] Added album {album_id} to favorites")
+            time.sleep(0.05)
+            return True
+
+        except requests.exceptions.RequestException as e:
+            logger.error(f"[{self.account_name}] Failed to add album {album_id}: {e}")
+            return False
+
+    def get_favorite_artists(self, limit: int = 5000) -> List[Dict]:
+        """Get all favorite artists for the authenticated user."""
+        try:
+            url = f"{self.BASE_URL}/favorite/getUserFavorites"
+            params = {"type": "artists", "limit": limit, "offset": 0}
+
+            response = self._session.get(url, params=params, timeout=30)
+            response.raise_for_status()
+
+            data = response.json()
+            artists = []
+
+            if 'artists' in data and 'items' in data['artists']:
+                for item in data['artists']['items']:
+                    artists.append({
+                        'id': item['id'],
+                        'name': item.get('name', 'Unknown')
+                    })
+
+            logger.info(f"[{self.account_name}] Retrieved {len(artists)} favorite artists")
+            return artists
+
+        except requests.exceptions.RequestException as e:
+            logger.error(f"[{self.account_name}] Failed to get favorite artists: {e}")
+            raise Exception(f"Failed to get favorite artists: {e}")
+
+    def add_favorite_artist(self, artist_id: int) -> bool:
+        """Add an artist to user's favorites."""
+        try:
+            url = f"{self.BASE_URL}/favorite/create"
+            params = {"artist_ids": str(artist_id)}
+
+            response = self._session.post(url, data=params, timeout=10)
+
+            if response.status_code == 400:
+                logger.debug(f"[{self.account_name}] Artist {artist_id} already favorited")
+                return True
+
+            response.raise_for_status()
+            logger.debug(f"[{self.account_name}] Added artist {artist_id} to favorites")
+            time.sleep(0.05)
+            return True
+
+        except requests.exceptions.RequestException as e:
+            logger.error(f"[{self.account_name}] Failed to add artist {artist_id}: {e}")
+            return False
     
     def list_user_playlists(self) -> List[Dict]:
         """

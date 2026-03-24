@@ -51,34 +51,35 @@ def extract_token_from_har(har_file_path: str) -> str:
     entries = har_data.get('log', {}).get('entries', [])
     
     for entry in entries:
-        # Check request headers
+        # Check request headers first (highest priority)
         if 'request' in entry and 'headers' in entry['request']:
             for header in entry['request']['headers']:
                 header_name = header.get('name', '').lower()
                 if header_name in ['x-user-auth-token', 'authorization', 'x-auth-token']:
-                    token = header.get('value', '')
-                    if len(token) > 30:  # Valid tokens are long
+                    header_value = header.get('value', '')
+                    if len(header_value) > 10:
+                        token = header_value
                         found_in = f"Request header: {header['name']}"
                         break
-        
-        # Check request cookies
-        if 'request' in entry and 'cookies' in entry['request']:
+
+        # Check request cookies only if no header token found
+        if not token and 'request' in entry and 'cookies' in entry['request']:
             for cookie in entry['request']['cookies']:
                 cookie_name = cookie.get('name', '').lower()
                 if 'user_auth_token' in cookie_name or 'auth' in cookie_name:
                     cookie_value = cookie.get('value', '')
-                    if len(cookie_value) > 30:
+                    if len(cookie_value) > 10:
                         token = cookie_value
                         found_in = f"Request cookie: {cookie['name']}"
                         break
-        
-        # Check response cookies
-        if 'response' in entry and 'cookies' in entry['response']:
+
+        # Check response cookies only if still not found
+        if not token and 'response' in entry and 'cookies' in entry['response']:
             for cookie in entry['response']['cookies']:
                 cookie_name = cookie.get('name', '').lower()
                 if 'user_auth_token' in cookie_name or 'auth' in cookie_name:
                     cookie_value = cookie.get('value', '')
-                    if len(cookie_value) > 30:
+                    if len(cookie_value) > 10:
                         token = cookie_value
                         found_in = f"Response cookie: {cookie['name']}"
                         break

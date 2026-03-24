@@ -10,33 +10,17 @@ logger = get_logger()
 
 class QobuzSyncService:
     """Service for syncing favorites and playlists from multiple Qobuz accounts to a target account."""
-    
+
     def __init__(self, source_clients: List[QobuzClient], target_client: QobuzClient):
-        """
-        Initialize sync service.
-        
-        Args:
-            source_clients: List of source Qobuz clients to sync from
-            target_client: Target Qobuz client to sync to
-        """
         self.source_clients = source_clients
         self.target_client = target_client
-    
+
     def sync_favorites(self, dry_run: bool = False) -> Dict:
-        """
-        Sync favorite tracks from all source accounts to target account.
-        Deduplicates by track ID and ISRC.
-        
-        Args:
-            dry_run: If True, only report what would be synced without making changes
-        
-        Returns:
-            Dict with sync statistics
-        """
+        """Sync favorite tracks from all source accounts to target account."""
         logger.info("=" * 60)
         logger.info("Starting favorites sync")
         logger.info("=" * 60)
-        
+
         stats = {
             'source_accounts': len(self.source_clients),
             'total_source_favorites': 0,
@@ -45,62 +29,51 @@ class QobuzSyncService:
             'newly_favorited': 0,
             'failed': 0
         }
-        
-        # Get existing favorites in target account
-        logger.info(f"Fetching existing favorites from target account ({self.target_client.account_name})...")
-        target_favorites = self.target_client.get_favorite_tracks()
-        target_track_ids = {track['id'] for track in target_favorites}
-        target_isrcs = {track['isrc'].upper() for track in target_favorites if track['isrc']}
-        
-        logger.info(f"Target account has {len(target_favorites)} existing favorites")
-        
-        # Collect all unique tracks from source accounts
-        unique_tracks: Dict[int, Dict] = {}  # track_id -> track_info
+
+        unique_tracks: Dict[int, Dict] = {}
         seen_isrcs: Set[str] = set()
-        
+
         for source_client in self.source_clients:
             logger.info(f"\nFetching favorites from {source_client.account_name}...")
             source_favorites = source_client.get_favorite_tracks()
             stats['total_source_favorites'] += len(source_favorites)
-            
+
             for track in source_favorites:
                 track_id = track['id']
-                isrc = track['isrc'].upper() if track['isrc'] else ''
-                
-                # Skip if we've already seen this track (by ID or ISRC)
+                isrc = track['isrc'].upper() if track.get('isrc') else ''
+
                 if track_id in unique_tracks:
                     continue
-                    
                 if isrc and isrc in seen_isrcs:
                     logger.debug(f"Skipping duplicate ISRC: {track['title']} by {track['artist']}")
                     continue
-                
-                # Add to unique tracks
+
                 unique_tracks[track_id] = track
                 if isrc:
                     seen_isrcs.add(isrc)
-        
+
+        logger.info(f"Fetching existing favorites from target account ({self.target_client.account_name})...")
+        target_favorites = self.target_client.get_favorite_tracks()
+        target_track_ids = {track['id'] for track in target_favorites}
+        target_isrcs = {track['isrc'].upper() for track in target_favorites if track.get('isrc')}
+        logger.info(f"Target account has {len(target_favorites)} existing favorites")
+
         stats['unique_tracks'] = len(unique_tracks)
         logger.info(f"\nFound {stats['unique_tracks']} unique tracks across {stats['source_accounts']} source accounts")
         logger.info(f"Total source favorites: {stats['total_source_favorites']}")
-        
-        # Sync to target account
+
         logger.info(f"\nSyncing to target account ({self.target_client.account_name})...")
-        
         for i, (track_id, track) in enumerate(unique_tracks.items(), 1):
-            isrc = track['isrc'].upper() if track['isrc'] else ''
-            
-            # Check if already in target (by ID or ISRC)
+            isrc = track['isrc'].upper() if track.get('isrc') else ''
+
             already_exists = track_id in target_track_ids
             if not already_exists and isrc:
                 already_exists = isrc in target_isrcs
-            
+
             if already_exists:
-                logger.debug(f"[{i}/{stats['unique_tracks']}] Already favorited: {track['title']} by {track['artist']}")
                 stats['already_favorited'] += 1
                 continue
-            
-            # Add to target favorites
+
             if dry_run:
                 logger.info(f"[{i}/{stats['unique_tracks']}] [DRY RUN] Would favorite: {track['title']} by {track['artist']}")
                 stats['newly_favorited'] += 1
@@ -109,15 +82,12 @@ class QobuzSyncService:
                 if success:
                     logger.info(f"[{i}/{stats['unique_tracks']}] ✅ Favorited: {track['title']} by {track['artist']}")
                     stats['newly_favorited'] += 1
-                    # Track in our sets to avoid duplicate attempts
                     target_track_ids.add(track_id)
                     if isrc:
                         target_isrcs.add(isrc)
                 else:
-                    logger.error(f"[{i}/{stats['unique_tracks']}] ❌ Failed: {track['title']} by {track['artist']}")
                     stats['failed'] += 1
-        
-        # Print summary
+
         logger.info("\n" + "=" * 60)
         logger.info("FAVORITES SYNC SUMMARY")
         logger.info("=" * 60)
@@ -127,30 +97,112 @@ class QobuzSyncService:
         logger.info(f"Already in target account: {stats['already_favorited']}")
         logger.info(f"Newly favorited: {stats['newly_favorited']}")
         logger.info(f"Failed: {stats['failed']}")
-        
         if stats['unique_tracks'] > 0:
             coverage = ((stats['already_favorited'] + stats['newly_favorited']) / stats['unique_tracks']) * 100
             logger.info(f"Coverage: {coverage:.1f}%")
-        
         logger.info("=" * 60)
-        
+
         return stats
-    
+
+    def sync_albums(self, dry_run: bool = False) -> Dict:
+        """Sync favorite albums from all source accounts to target account."""
+        logger.info("=" * 60)
+        logger.info("Starting albums sync")
+        logger.info("=" * 60)
+
+        stats = {
+            'source_accounts': len(self.source_clients),
+            'total_source_albums': 0,
+            'unique_albums': 0,
+            'already_favorited': 0,
+            'newly_favorited': 0,
+            'failed': 0
+        }
+
+        unique_albums: Dict[int, Dict] = {}
+        seen_upcs: Set[str] = set()
+
+        for source_client in self.source_clients:
+            source_albums = source_client.get_favorite_albums()
+            stats['total_source_albums'] += len(source_albums)
+            for album in source_albums:
+                album_id = album['id']
+                upc = album.get('upc', '').upper()
+                if album_id in unique_albums:
+                    continue
+                if upc and upc in seen_upcs:
+                    continue
+                unique_albums[album_id] = album
+                if upc:
+                    seen_upcs.add(upc)
+
+        target_albums = self.target_client.get_favorite_albums()
+        target_album_ids = {album['id'] for album in target_albums}
+        target_upcs = {album['upc'].upper() for album in target_albums if album.get('upc')}
+
+        stats['unique_albums'] = len(unique_albums)
+        for album_id, album in unique_albums.items():
+            upc = album.get('upc', '').upper()
+            if album_id in target_album_ids or (upc and upc in target_upcs):
+                stats['already_favorited'] += 1
+                continue
+
+            if dry_run:
+                stats['newly_favorited'] += 1
+            else:
+                if self.target_client.add_favorite_album(album_id):
+                    stats['newly_favorited'] += 1
+                else:
+                    stats['failed'] += 1
+
+        return stats
+
+    def sync_artists(self, dry_run: bool = False) -> Dict:
+        """Sync favorite artists from all source accounts to target account."""
+        logger.info("=" * 60)
+        logger.info("Starting artists sync")
+        logger.info("=" * 60)
+
+        stats = {
+            'source_accounts': len(self.source_clients),
+            'total_source_artists': 0,
+            'unique_artists': 0,
+            'already_favorited': 0,
+            'newly_favorited': 0,
+            'failed': 0
+        }
+
+        unique_artists: Dict[int, Dict] = {}
+        for source_client in self.source_clients:
+            source_artists = source_client.get_favorite_artists()
+            stats['total_source_artists'] += len(source_artists)
+            for artist in source_artists:
+                unique_artists.setdefault(artist['id'], artist)
+
+        target_artists = self.target_client.get_favorite_artists()
+        target_artist_ids = {artist['id'] for artist in target_artists}
+
+        stats['unique_artists'] = len(unique_artists)
+        for artist_id in unique_artists:
+            if artist_id in target_artist_ids:
+                stats['already_favorited'] += 1
+                continue
+            if dry_run:
+                stats['newly_favorited'] += 1
+            else:
+                if self.target_client.add_favorite_artist(artist_id):
+                    stats['newly_favorited'] += 1
+                else:
+                    stats['failed'] += 1
+
+        return stats
+
     def sync_playlists(self, dry_run: bool = False, merge_playlists: bool = True) -> Dict:
-        """
-        Sync playlists from all source accounts to target account.
-        
-        Args:
-            dry_run: If True, only report what would be synced without making changes
-            merge_playlists: If True, merge playlists with same name; if False, keep separate
-        
-        Returns:
-            Dict with sync statistics
-        """
+        """Sync playlists from all source accounts to target account."""
         logger.info("=" * 60)
         logger.info("Starting playlists sync")
         logger.info("=" * 60)
-        
+
         stats = {
             'source_accounts': len(self.source_clients),
             'total_source_playlists': 0,
@@ -160,132 +212,90 @@ class QobuzSyncService:
             'tracks_skipped': 0,
             'failed': 0
         }
-        
-        # Get existing playlists in target account
-        logger.info(f"Fetching existing playlists from target account ({self.target_client.account_name})...")
-        target_playlists = {p['name']: p for p in self.target_client.list_user_playlists()}
-        
-        # Collect playlists from all source accounts
-        source_playlists: Dict[str, List[Dict]] = {}  # playlist_name -> [list of playlists with that name]
-        
+
+        source_playlists: Dict[str, List[Dict]] = {}
         for source_client in self.source_clients:
             logger.info(f"\nFetching playlists from {source_client.account_name}...")
             playlists = source_client.list_user_playlists()
             stats['total_source_playlists'] += len(playlists)
-            
+
             for playlist in playlists:
                 name = playlist['name']
                 if merge_playlists:
-                    # Merge playlists with same name
-                    if name not in source_playlists:
-                        source_playlists[name] = []
-                    source_playlists[name].append({
-                        'client': source_client,
-                        'playlist': playlist
-                    })
+                    source_playlists.setdefault(name, []).append({'client': source_client, 'playlist': playlist})
                 else:
-                    # Keep separate with account prefix
                     prefixed_name = f"[{source_client.account_name}] {name}"
-                    source_playlists[prefixed_name] = [{
-                        'client': source_client,
-                        'playlist': playlist
-                    }]
-        
+                    source_playlists[prefixed_name] = [{'client': source_client, 'playlist': playlist}]
+
+        target_playlists = None
+
         logger.info(f"\nFound {len(source_playlists)} unique playlist names to sync")
-        
-        # Sync each playlist
+
         for playlist_name, playlist_sources in source_playlists.items():
-            logger.info(f"\n--- Syncing playlist: {playlist_name} ---")
-            
-            # Collect all tracks from all sources with this playlist name
-            all_tracks: Dict[int, Dict] = {}  # track_id -> track_info
+            all_tracks: Dict[int, Dict] = {}
             seen_isrcs: Set[str] = set()
-            
+
             for source_info in playlist_sources:
                 source_client = source_info['client']
                 source_playlist = source_info['playlist']
-                
-                logger.info(f"  Fetching tracks from {source_client.account_name}...")
                 tracks = source_client.get_playlist_tracks(source_playlist['id'])
-                
+
                 for track in tracks:
                     track_id = track['id']
-                    isrc = track['isrc'].upper() if track['isrc'] else ''
-                    
-                    # Deduplicate by ID and ISRC
+                    isrc = track['isrc'].upper() if track.get('isrc') else ''
                     if track_id in all_tracks:
                         continue
                     if isrc and isrc in seen_isrcs:
                         continue
-                    
                     all_tracks[track_id] = track
                     if isrc:
                         seen_isrcs.add(isrc)
-            
-            logger.info(f"  Total unique tracks to sync: {len(all_tracks)}")
-            
-            # Get or create target playlist
+
+            if target_playlists is None:
+                logger.info(f"Fetching existing playlists from target account ({self.target_client.account_name})...")
+                target_playlists = {p['name']: p for p in self.target_client.list_user_playlists()}
+
             if playlist_name in target_playlists:
                 target_playlist_id = target_playlists[playlist_name]['id']
-                logger.info(f"  Found existing playlist (ID: {target_playlist_id})")
-                
-                # Get existing tracks
                 existing_tracks = self.target_client.get_playlist_tracks(target_playlist_id)
                 existing_track_ids = {t['id'] for t in existing_tracks}
-                existing_isrcs = {t['isrc'].upper() for t in existing_tracks if t['isrc']}
-                
+                existing_isrcs = {t['isrc'].upper() for t in existing_tracks if t.get('isrc')}
                 stats['playlists_updated'] += 1
             else:
                 if dry_run:
-                    logger.info(f"  [DRY RUN] Would create new playlist: {playlist_name}")
                     target_playlist_id = "DRY_RUN_ID"
                     existing_track_ids = set()
                     existing_isrcs = set()
                     stats['playlists_created'] += 1
                 else:
-                    # Create new playlist
                     description = f"Synced from {', '.join([s['client'].account_name for s in playlist_sources])}"
                     target_playlist_id = self.target_client.create_playlist(playlist_name, description)
-                    
                     if not target_playlist_id:
-                        logger.error(f"  ❌ Failed to create playlist: {playlist_name}")
                         stats['failed'] += 1
                         continue
-                    
                     existing_track_ids = set()
                     existing_isrcs = set()
                     stats['playlists_created'] += 1
-            
-            # Add tracks to target playlist
+
             for track_id, track in all_tracks.items():
-                isrc = track['isrc'].upper() if track['isrc'] else ''
-                
-                # Check if already in playlist
-                already_exists = track_id in existing_track_ids
-                if not already_exists and isrc:
-                    already_exists = isrc in existing_isrcs
-                
+                isrc = track['isrc'].upper() if track.get('isrc') else ''
+                already_exists = track_id in existing_track_ids or (isrc and isrc in existing_isrcs)
+
                 if already_exists:
-                    logger.debug(f"    Already in playlist: {track['title']} by {track['artist']}")
                     stats['tracks_skipped'] += 1
                     continue
-                
+
                 if dry_run:
-                    logger.debug(f"    [DRY RUN] Would add: {track['title']} by {track['artist']}")
                     stats['tracks_added'] += 1
                 else:
-                    success = self.target_client.add_track_to_playlist(target_playlist_id, track_id)
-                    if success:
-                        logger.debug(f"    ✅ Added: {track['title']} by {track['artist']}")
+                    if self.target_client.add_track_to_playlist(target_playlist_id, track_id):
                         stats['tracks_added'] += 1
                         existing_track_ids.add(track_id)
                         if isrc:
                             existing_isrcs.add(isrc)
                     else:
-                        logger.error(f"    ❌ Failed: {track['title']} by {track['artist']}")
                         stats['failed'] += 1
-        
-        # Print summary
+
         logger.info("\n" + "=" * 60)
         logger.info("PLAYLISTS SYNC SUMMARY")
         logger.info("=" * 60)
@@ -297,5 +307,5 @@ class QobuzSyncService:
         logger.info(f"Tracks skipped (already in playlist): {stats['tracks_skipped']}")
         logger.info(f"Failed operations: {stats['failed']}")
         logger.info("=" * 60)
-        
+
         return stats

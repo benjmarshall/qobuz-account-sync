@@ -1,12 +1,15 @@
 # Qobuz Account Sync
 
-Sync favorites and playlists from two source Qobuz accounts into a shared target account. Automatically deduplicates tracks by ID and ISRC.
+Sync tracks, albums, artists, and playlists from two source Qobuz accounts into a shared target account. Automatically deduplicates and skips already-synced items.
 
 ## ✨ Features
 
-- 🔄 **Sync favorites** from multiple source accounts to target account
+- 🔄 **Sync favorite tracks, albums, and artists** from multiple source accounts to target account
 - 🎵 **Sync playlists** with smart merging or keep separate
-- 🎯 **Automatic deduplication** by track ID and ISRC
+- 🎯 **Automatic deduplication**
+  - tracks: by ID + ISRC
+  - albums: by ID + UPC
+  - artists: by ID
 - 🔐 **Token-based authentication** - works with any Qobuz account type (email, Google, Facebook)
 - 🧪 **Dry-run mode** - test before making changes
 - 📊 **Detailed reporting** - comprehensive logs of all operations
@@ -108,9 +111,9 @@ python sync.py
 ```
 
 That's it! The script will:
-- Fetch all favorites from both source accounts
-- Deduplicate by track ID and ISRC
-- Add unique tracks to target account favorites
+- Fetch favorite tracks, albums, and artists from both source accounts
+- Deduplicate tracks (ID/ISRC), albums (ID/UPC), and artists (ID)
+- Add only missing favorites to the target account
 - Fetch all playlists from both source accounts
 - Merge playlists with the same name (or keep separate with `--no-merge`)
 - Add missing tracks to each playlist
@@ -126,7 +129,7 @@ python sync.py --dry-run
 python sync.py
 ```
 
-### Sync Favorites Only
+### Sync Tracks Favorites Only (Backwards Compatible)
 ```bash
 python sync.py --favorites-only
 ```
@@ -134,6 +137,21 @@ python sync.py --favorites-only
 ### Sync Playlists Only
 ```bash
 python sync.py --playlists-only
+```
+
+### Sync Albums Only
+```bash
+python sync.py --albums-only
+```
+
+### Sync Artists Only
+```bash
+python sync.py --artists-only
+```
+
+### Skip Albums and Artists
+```bash
+python sync.py --skip-albums --skip-artists
 ```
 
 ### Keep Playlists Separate (Don't Merge)
@@ -189,6 +207,18 @@ Options:
       
   --playlists-only
       Only sync playlists, skip favorites
+
+  --albums-only
+      Only sync favorite albums
+
+  --artists-only
+      Only sync favorite artists
+
+  --skip-albums
+      Skip syncing favorite albums
+
+  --skip-artists
+      Skip syncing favorite artists
       
   --no-merge
       Keep playlists separate instead of merging by name.
@@ -208,11 +238,22 @@ Options:
 
 ### Favorites Deduplication
 
-1. **Fetch from sources**: Get all favorites from both source accounts
+#### Tracks
+1. **Fetch from sources**: Get all favorite tracks from both source accounts
 2. **Deduplicate by ID**: If same track ID appears multiple times, keep only one
 3. **Deduplicate by ISRC**: If different track IDs have same ISRC code, keep only first
 4. **Check target**: See which tracks already exist in target account
 5. **Sync unique tracks**: Only add tracks not already in target favorites
+
+#### Albums
+1. Fetch favorite albums from all source accounts
+2. Deduplicate by album ID, then by UPC where available
+3. Skip albums already in target favorites (ID/UPC)
+
+#### Artists
+1. Fetch favorite artists from all source accounts
+2. Deduplicate by artist ID
+3. Skip artists already in target favorites
 
 ### Playlist Deduplication
 

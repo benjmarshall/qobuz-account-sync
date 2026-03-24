@@ -156,6 +156,85 @@ class TestFavoritesSync:
         assert stats['newly_favorited'] == 1
 
 
+class TestAlbumsAndArtistsSync:
+    """Test albums/artists synchronization."""
+
+    def test_sync_albums_dedup_and_skip_existing(self):
+        source1 = Mock()
+        source1.account_name = "Source 1"
+        source1.get_favorite_albums.return_value = [
+            {'id': 10, 'title': 'Album 1', 'artist': 'Artist 1', 'upc': 'UPC1'},
+            {'id': 11, 'title': 'Album 2', 'artist': 'Artist 2', 'upc': 'UPC2'}
+        ]
+
+        source2 = Mock()
+        source2.account_name = "Source 2"
+        source2.get_favorite_albums.return_value = [
+            {'id': 999, 'title': 'Album 1 Duplicate', 'artist': 'Artist 1', 'upc': 'UPC1'}
+        ]
+
+        target = Mock()
+        target.account_name = "Target"
+        target.get_favorite_albums.return_value = [
+            {'id': 11, 'title': 'Album 2', 'artist': 'Artist 2', 'upc': 'UPC2'}
+        ]
+        target.add_favorite_album.return_value = True
+
+        service = QobuzSyncService([source1, source2], target)
+        stats = service.sync_albums(dry_run=False)
+
+        assert stats['unique_albums'] == 2
+        assert stats['already_favorited'] == 1
+        assert stats['newly_favorited'] == 1
+        assert target.add_favorite_album.call_count == 1
+
+    def test_sync_albums_dry_run(self):
+        source = Mock()
+        source.account_name = "Source"
+        source.get_favorite_albums.return_value = [
+            {'id': 10, 'title': 'Album 1', 'artist': 'Artist 1', 'upc': 'UPC1'}
+        ]
+
+        target = Mock()
+        target.account_name = "Target"
+        target.get_favorite_albums.return_value = []
+
+        service = QobuzSyncService([source], target)
+        stats = service.sync_albums(dry_run=True)
+
+        target.add_favorite_album.assert_not_called()
+        assert stats['newly_favorited'] == 1
+
+    def test_sync_artists_dedup_and_skip_existing(self):
+        source1 = Mock()
+        source1.account_name = "Source 1"
+        source1.get_favorite_artists.return_value = [
+            {'id': 1, 'name': 'Artist 1'},
+            {'id': 2, 'name': 'Artist 2'}
+        ]
+
+        source2 = Mock()
+        source2.account_name = "Source 2"
+        source2.get_favorite_artists.return_value = [
+            {'id': 2, 'name': 'Artist 2'}
+        ]
+
+        target = Mock()
+        target.account_name = "Target"
+        target.get_favorite_artists.return_value = [
+            {'id': 1, 'name': 'Artist 1'}
+        ]
+        target.add_favorite_artist.return_value = True
+
+        service = QobuzSyncService([source1, source2], target)
+        stats = service.sync_artists(dry_run=False)
+
+        assert stats['unique_artists'] == 2
+        assert stats['already_favorited'] == 1
+        assert stats['newly_favorited'] == 1
+        assert target.add_favorite_artist.call_count == 1
+
+
 class TestPlaylistsSync:
     """Test playlists synchronization."""
     

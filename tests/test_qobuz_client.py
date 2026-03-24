@@ -121,6 +121,69 @@ class TestQobuzClientFavorites:
         assert result is True  # Should still return True for already favorited
 
 
+class TestQobuzClientAlbumsAndArtists:
+    """Test favorite album and artist operations."""
+
+    @patch('src.qobuz_client.requests.Session.get')
+    def test_get_favorite_albums(self, mock_get, mock_token):
+        mock_response = Mock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {
+            'albums': {
+                'items': [
+                    {'id': 10, 'title': 'Album One', 'artist': {'name': 'Artist One'}, 'upc': 'UPC1'}
+                ]
+            }
+        }
+        mock_get.return_value = mock_response
+
+        client = QobuzClient(mock_token, "Test Account")
+        albums = client.get_favorite_albums()
+
+        assert len(albums) == 1
+        assert albums[0]['id'] == 10
+        assert albums[0]['title'] == 'Album One'
+        assert albums[0]['upc'] == 'UPC1'
+
+    @patch('src.qobuz_client.requests.Session.post')
+    def test_add_favorite_album(self, mock_post, mock_token):
+        mock_response = Mock()
+        mock_response.status_code = 200
+        mock_post.return_value = mock_response
+
+        client = QobuzClient(mock_token, "Test Account")
+        assert client.add_favorite_album(10) is True
+
+    @patch('src.qobuz_client.requests.Session.get')
+    def test_get_favorite_artists(self, mock_get, mock_token):
+        mock_response = Mock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {
+            'artists': {
+                'items': [
+                    {'id': 77, 'name': 'Artist One'}
+                ]
+            }
+        }
+        mock_get.return_value = mock_response
+
+        client = QobuzClient(mock_token, "Test Account")
+        artists = client.get_favorite_artists()
+
+        assert len(artists) == 1
+        assert artists[0]['id'] == 77
+        assert artists[0]['name'] == 'Artist One'
+
+    @patch('src.qobuz_client.requests.Session.post')
+    def test_add_favorite_artist(self, mock_post, mock_token):
+        mock_response = Mock()
+        mock_response.status_code = 200
+        mock_post.return_value = mock_response
+
+        client = QobuzClient(mock_token, "Test Account")
+        assert client.add_favorite_artist(77) is True
+
+
 class TestQobuzClientPlaylists:
     """Test playlist operations."""
     
